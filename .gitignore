@@ -1,0 +1,24 @@
+# Environments
+satisfaction_proxy_env/
+.env
+.venv
+env/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data, Models & Preprocessing Output
+*.pth
+*.parquet
+*.pkl
+
+# Plots & Logs
+runs/
+density_evaluation_plots/
+evaluation_plots/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints 
