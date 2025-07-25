@@ -12,9 +12,14 @@ __pycache__/
 
 # Data, Models & Preprocessing Output
 *.pth
+*.png
+*.csv
+*.db
+*.log
 *.parquet
 *.pkl
 
+*.txt
 # Plots & Logs
 runs/
 density_evaluation_plots/

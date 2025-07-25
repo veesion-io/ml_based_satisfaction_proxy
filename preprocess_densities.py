@@ -24,7 +24,7 @@ import random
 warnings.filterwarnings('ignore')
 
 # --- Configuration ---
-N_BINS = 100 # Must match the training script configuration
+N_BINS = 20 # Must match the training script configuration
 TP_BANDWIDTH = 0.0546 # Globally determined optimal value
 FP_BANDWIDTH = 0.0336 # Globally determined optimal value
 
@@ -46,28 +46,28 @@ def get_ground_truth_kde(data: np.ndarray, n_bins: int, bandwidth: float) -> Opt
         print(f"Warning: KDE calculation failed. Error: {e}")
         return None
 
-def process_camera_file(file_path: str, n_bins: int, tp_bw: float, fp_bw: float) -> Optional[Dict]:
+def process_camera_file(file_path: str, n_bins: int) -> Optional[Dict]:
     """
-    Reads a camera file, filters it, and calculates densities using fixed bandwidths.
+    Reads a camera file, filters it, and gets the KDE density for TP/FP.
     """
     df = pd.read_parquet(file_path)
     
     tp_count = df['is_theft'].sum()
     fp_count = len(df) - tp_count
 
-    # Skip cameras with too few alerts overall or not enough TPs/FPs for KDE
-    if len(df) < 100 or tp_count < 2 or fp_count < 2:
+    if len(df) < 300 or tp_count < 5 or fp_count < 5:  # Need min 5 samples for stable KDE
         return None
     
     tp_probs = df[df['is_theft'] == 1]['max_proba'].values
     fp_probs = df[df['is_theft'] == 0]['max_proba'].values
 
-    tp_density = get_ground_truth_kde(tp_probs, n_bins, bandwidth=tp_bw)
-    fp_density = get_ground_truth_kde(fp_probs, n_bins, bandwidth=fp_bw)
+    # Use KDE for smooth densities
+    tp_density = get_ground_truth_kde(tp_probs, n_bins, TP_BANDWIDTH)
+    fp_density = get_ground_truth_kde(fp_probs, n_bins, FP_BANDWIDTH)
     
     if tp_density is None or fp_density is None:
         return None
-        
+    
     return {
         'file_path': file_path,
         'tp_density': tp_density,
@@ -77,7 +77,7 @@ def process_camera_file(file_path: str, n_bins: int, tp_bw: float, fp_bw: float)
 def main():
     """Main function to run the parallel preprocessing."""
     data_dir = "data_by_camera"
-    output_file = "ground_truth_densities.pkl"
+    output_file = "ground_truth_histograms.pkl"
     
     print(f"Searching for camera files in {data_dir}...")
     all_camera_files = [str(f) for f in Path(data_dir).glob("*.parquet")]
@@ -85,7 +85,7 @@ def main():
     
     print("\nStarting parallel processing of all camera data with fixed bandwidths...")
     results = Parallel(n_jobs=-1)(
-        delayed(process_camera_file)(f, N_BINS, TP_BANDWIDTH, FP_BANDWIDTH) for f in tqdm(all_camera_files)
+        delayed(process_camera_file)(f, N_BINS) for f in tqdm(all_camera_files)
     )
     
     # Filter out None results from cameras that were skipped

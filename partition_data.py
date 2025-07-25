@@ -57,8 +57,13 @@ def partition_data_by_camera(input_file: str, output_dir: str):
         safe_camera_id = "".join([c if c.isalnum() else "_" for c in camera_id])
         file_path = output_path / f"{safe_camera_id}.parquet"
         
-        # Select only the necessary columns to save space
-        final_df = group_df[['max_proba', 'is_theft']].copy()
+        # Select the necessary columns including any date columns that are available
+        base_columns = ['max_proba', 'is_theft']
+        date_columns = ['timesent', 'timespotted', 'annotated_at']
+        available_date_cols = [col for col in date_columns if col in group_df.columns]
+        
+        columns_to_save = base_columns + available_date_cols
+        final_df = group_df[columns_to_save].copy()
         
         final_df.to_parquet(file_path, index=False)
         

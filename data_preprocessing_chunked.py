@@ -151,9 +151,12 @@ def process_parquet_in_chunks(input_file: str, output_file: str, chunk_size: int
         print("Error: No camera identification columns found!")
         return False
     
-    # Define the columns we need
-    essential_columns = camera_cols + [prob_col, label_col]
+    # Define the columns we need (including date columns)
+    date_columns = ['timesent', 'timespotted', 'annotated_at']
+    available_date_cols = [col for col in date_columns if col in sample_df.columns]
+    essential_columns = camera_cols + [prob_col, label_col] + available_date_cols
     print(f"\nProcessing columns: {essential_columns}")
+    print(f"Date columns included: {available_date_cols}")
     
     # Initialize counters
     total_processed = 0
