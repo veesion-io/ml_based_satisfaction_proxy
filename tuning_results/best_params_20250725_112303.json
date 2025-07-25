@@ -1,0 +1,17 @@
+{
+  "best_params": {
+    "learning_rate": 2.8196307674517922e-05,
+    "batch_size": 2,
+    "phi_dim": 384,
+    "num_heads": 8,
+    "dropout_rate": 0.23097106847684146,
+    "weight_decay": 4.410533980633825e-06,
+    "density_weight": 2.1980866128180816,
+    "distribution_weight": 3.9251363448261585,
+    "precision_weight": 2.6594369582438824
+  },
+  "best_value": Infinity,
+  "study_name": "precision_aware_tuning_20250725_112302",
+  "n_trials": 20,
+  "tuning_epochs": 8
+}

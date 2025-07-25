@@ -20,16 +20,18 @@ from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 import warnings
 
-# Import from the main training script
-from precision_aware_training import (
-    CameraDensityDatasetPrecisionAware, 
+# Import from the new modular structure
+from models import (
+    CameraDensityDatasetPrecisionAware,
     DeepSetsPrecisionAware,
     precision_aware_loss,
-    collate_fn,
-    SAMPLE_SIZE_RANGE,
-    N_BINS,
-    DEVICE
+    collate_fn
 )
+
+# Constants
+SAMPLE_SIZE_RANGE = (10, 2000)
+N_BINS = 20
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 warnings.filterwarnings('ignore')
 
