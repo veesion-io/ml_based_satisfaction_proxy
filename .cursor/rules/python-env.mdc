@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+---
+- Always run your python commands in the .venv environnement in the current directory. If needed, activate .venv.
