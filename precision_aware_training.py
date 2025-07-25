@@ -31,6 +31,8 @@ DEFAULT_EPOCHS = 22
 DEFAULT_LEARNING_RATE = 0.0005793892334263356
 DEFAULT_PHI_DIM = 208
 DEFAULT_NUM_HEADS = 7
+DEFAULT_DROPOUT_RATE = 0.1
+DEFAULT_WEIGHT_DECAY = 1e-4
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class CameraDensityDatasetPrecisionAware(Dataset):
@@ -99,54 +101,80 @@ class CameraDensityDatasetPrecisionAware(Dataset):
         return sample_features, tp_density, fp_density, tp_ratio, gt_precision, k
 
 class ResidualMLP(nn.Module):
-    def __init__(self, dim): 
+    def __init__(self, dim, dropout_rate=0.1): 
         super().__init__()
         self.fc1 = nn.Linear(dim, dim)
         self.fc2 = nn.Linear(dim, dim)
+        self.dropout = nn.Dropout(dropout_rate)
     
     def forward(self, x): 
-        return F.relu(self.fc2(F.relu(self.fc1(x))) + x)
+        return F.relu(self.fc2(self.dropout(F.relu(self.fc1(x))))) + x
 
 class MAB(nn.Module):
-    def __init__(self, dim_V, num_heads, ln=True):
+    def __init__(self, dim_V, num_heads, dropout_rate=0.1, ln=True):
         super(MAB, self).__init__()
-        self.mha = nn.MultiheadAttention(dim_V, num_heads)
+        self.mha = nn.MultiheadAttention(dim_V, num_heads, dropout=dropout_rate)
         self.ln1 = nn.LayerNorm(dim_V) if ln else nn.Identity()
         self.ln2 = nn.LayerNorm(dim_V) if ln else nn.Identity()
-        self.ffn = nn.Sequential(nn.Linear(dim_V, dim_V), nn.ReLU(), nn.Linear(dim_V, dim_V))
+        self.ffn = nn.Sequential(
+            nn.Linear(dim_V, dim_V), 
+            nn.ReLU(), 
+            nn.Dropout(dropout_rate),
+            nn.Linear(dim_V, dim_V)
+        )
+        self.dropout = nn.Dropout(dropout_rate)
     
     def forward(self, Q, K):
         Q_norm, K_norm = self.ln1(Q).permute(1, 0, 2), self.ln1(K).permute(1, 0, 2)
         out, _ = self.mha(Q_norm, K_norm, K_norm)
-        out = Q + out.permute(1, 0, 2)
+        out = Q + self.dropout(out.permute(1, 0, 2))
         out = self.ln2(out)
         out = out + self.ffn(out)
         return out
 
 class DeepSetsPrecisionAware(nn.Module):
-    def __init__(self, phi_dim, n_bins, num_heads):
+    def __init__(self, phi_dim, n_bins, num_heads, dropout_rate=0.1):
         super(DeepSetsPrecisionAware, self).__init__()
         if phi_dim % num_heads != 0: 
             phi_dim = (phi_dim // num_heads + 1) * num_heads
         
         self.phi = nn.Sequential(
-            nn.Linear(3, phi_dim), 
-            ResidualMLP(phi_dim), 
-            ResidualMLP(phi_dim)
+            nn.Linear(3, phi_dim),
+            nn.Dropout(dropout_rate),
+            ResidualMLP(phi_dim, dropout_rate), 
+            ResidualMLP(phi_dim, dropout_rate)
         )
-        self.pooling = MAB(phi_dim, num_heads)
+        self.pooling = MAB(phi_dim, num_heads, dropout_rate)
         self.query = nn.Parameter(torch.randn(1, 1, phi_dim))
-        self.rho = nn.Sequential(ResidualMLP(phi_dim), ResidualMLP(phi_dim))
+        self.rho = nn.Sequential(
+            ResidualMLP(phi_dim, dropout_rate), 
+            ResidualMLP(phi_dim, dropout_rate)
+        )
         
         # Three output heads: TP density, FP density, and TP ratio mixture distribution
-        self.tp_head = nn.Linear(phi_dim, n_bins)
-        self.fp_head = nn.Linear(phi_dim, n_bins)
+        self.tp_head = nn.Sequential(
+            nn.Dropout(dropout_rate),
+            nn.Linear(phi_dim, n_bins)
+        )
+        self.fp_head = nn.Sequential(
+            nn.Dropout(dropout_rate),
+            nn.Linear(phi_dim, n_bins)
+        )
         
         # Mixture of logistic components for TP ratio distribution
         self.num_mixture_components = 5  # Number of logistic components
-        self.mixture_weights_head = nn.Linear(phi_dim, self.num_mixture_components)  # Mixture weights
-        self.mixture_locations_head = nn.Linear(phi_dim, self.num_mixture_components)  # Location parameters μᵢ
-        self.mixture_scales_head = nn.Linear(phi_dim, self.num_mixture_components)  # Scale parameters sᵢ
+        self.mixture_weights_head = nn.Sequential(
+            nn.Dropout(dropout_rate),
+            nn.Linear(phi_dim, self.num_mixture_components)
+        )  # Mixture weights
+        self.mixture_locations_head = nn.Sequential(
+            nn.Dropout(dropout_rate),
+            nn.Linear(phi_dim, self.num_mixture_components)
+        )  # Location parameters μᵢ
+        self.mixture_scales_head = nn.Sequential(
+            nn.Dropout(dropout_rate),
+            nn.Linear(phi_dim, self.num_mixture_components)
+        )  # Scale parameters sᵢ
     
     def forward(self, x, counts):
         mask = torch.arange(x.size(1), device=x.device)[None, :] < counts[:, None]
@@ -288,12 +316,13 @@ def main(args):
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, 
                            num_workers=4, collate_fn=collate_fn)
     
-    model = DeepSetsPrecisionAware(args.phi_dim, N_BINS, args.num_heads).to(DEVICE)
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    model = DeepSetsPrecisionAware(args.phi_dim, N_BINS, args.num_heads, args.dropout_rate).to(DEVICE)
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     plots_dir = "plots_precision_aware"
     os.makedirs(plots_dir, exist_ok=True)
     
     print(f"Starting precision-aware training on {DEVICE}...")
+    print(f"Hyperparameters: LR={args.learning_rate}, Dropout={args.dropout_rate}, Weight Decay={args.weight_decay}")
     
     # Initialize best score tracking
     best_precision_score = -1.0
@@ -386,7 +415,9 @@ def main(args):
                     'epochs': args.epochs,
                     'density_weight': args.density_weight,
                     'distribution_weight': args.distribution_weight,
-                    'precision_weight': args.precision_weight
+                    'precision_weight': args.precision_weight,
+                    'dropout_rate': args.dropout_rate,
+                    'weight_decay': args.weight_decay
                 }
             }, best_model_path)
             print(f"Epoch {epoch} | Train: {avg_train_loss:.4f} (D:{avg_train_density_loss:.4f}, B:{avg_train_distribution_loss:.4f}, P:{avg_train_precision_loss:.4f}) | Val: {avg_val_loss:.4f} (D:{avg_val_density_loss:.4f}, B:{avg_val_distribution_loss:.4f}, P:{avg_val_precision_loss:.4f}) | ✅ BEST MODEL SAVED")
@@ -403,6 +434,8 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=DEFAULT_EPOCHS)
     parser.add_argument('--phi_dim', type=int, default=DEFAULT_PHI_DIM)
     parser.add_argument('--num_heads', type=int, default=DEFAULT_NUM_HEADS)
+    parser.add_argument('--dropout_rate', type=float, default=DEFAULT_DROPOUT_RATE, help='Dropout rate for regularization')
+    parser.add_argument('--weight_decay', type=float, default=DEFAULT_WEIGHT_DECAY, help='Weight decay for optimizer regularization')
     parser.add_argument('--density_weight', type=float, default=1.0, help='Weight for density loss')
     parser.add_argument('--distribution_weight', type=float, default=2.0, help='Weight for Beta distribution loss')
     parser.add_argument('--precision_weight', type=float, default=1.0, help='Weight for mean precision loss')
