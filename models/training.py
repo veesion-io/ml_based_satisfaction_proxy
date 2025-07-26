@@ -24,6 +24,7 @@ def load_data():
     with open("ground_truth_histograms.pkl", 'rb') as f: 
         data = pickle.load(f)
     
+    # Ground truth precision is now pre-calculated
     train_data, val_data = train_test_split(data, test_size=0.2, random_state=42)
     return train_data, val_data
 
@@ -127,18 +128,18 @@ def validate_epoch(model, val_loader, args, device):
     return (total_val_loss / n_batches, total_val_density_loss / n_batches,
             total_val_distribution_loss / n_batches, total_val_precision_loss / n_batches)
 
-def save_best_model(model, optimizer, epoch, precision_score, train_loss, val_loss, 
-                   train_precision_loss, val_precision_loss, args, best_model_path):
+def save_best_model(model, optimizer, epoch, distribution_loss, train_loss, val_loss, 
+                   train_distribution_loss, val_distribution_loss, args, best_model_path):
     """Save the best model checkpoint"""
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'precision_score': precision_score,
+        'distribution_loss': distribution_loss,
         'train_loss': train_loss,
         'val_loss': val_loss,
-        'train_precision_loss': train_precision_loss,
-        'val_precision_loss': val_precision_loss,
+        'train_distribution_loss': train_distribution_loss,
+        'val_distribution_loss': val_distribution_loss,
         'hyperparameters': {
             'learning_rate': args.learning_rate,
             'batch_size': args.batch_size,

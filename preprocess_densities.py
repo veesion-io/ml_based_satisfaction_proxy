@@ -20,6 +20,7 @@ from sklearn.model_selection import GridSearchCV
 from joblib import Parallel, delayed
 import os
 import random
+from analysis.data_utils import load_and_filter_camera_data
 
 warnings.filterwarnings('ignore')
 
@@ -46,18 +47,11 @@ def get_ground_truth_kde(data: np.ndarray, n_bins: int, bandwidth: float) -> Opt
         print(f"Warning: KDE calculation failed. Error: {e}")
         return None
 
-def process_camera_file(file_path: str, n_bins: int) -> Optional[Dict]:
+def process_camera_file(camera_info: Dict, n_bins: int) -> Optional[Dict]:
     """
     Reads a camera file, filters it, and gets the KDE density for TP/FP.
     """
-    df = pd.read_parquet(file_path)
-    
-    tp_count = df['is_theft'].sum()
-    fp_count = len(df) - tp_count
-
-    if len(df) < 300 or tp_count < 5 or fp_count < 5:  # Need min 5 samples for stable KDE
-        return None
-    
+    df = camera_info['df']
     tp_probs = df[df['is_theft'] == 1]['max_proba'].values
     fp_probs = df[df['is_theft'] == 0]['max_proba'].values
 
@@ -68,24 +62,31 @@ def process_camera_file(file_path: str, n_bins: int) -> Optional[Dict]:
     if tp_density is None or fp_density is None:
         return None
     
+    # Calculate ground truth precision
+    tp_count = camera_info['tp_count']
+    fp_count = camera_info['fp_count']
+    total_count = tp_count + fp_count
+    tp_ratio_gt = tp_count / total_count if total_count > 0 else 0.0
+
     return {
-        'file_path': file_path,
+        'file_path': camera_info['file_path'],
         'tp_density': tp_density,
-        'fp_density': fp_density
+        'fp_density': fp_density,
+        'tp_count': camera_info['tp_count'],
+        'fp_count': camera_info['fp_count'],
+        'tp_ratio_gt': tp_ratio_gt
     }
 
 def main():
     """Main function to run the parallel preprocessing."""
-    data_dir = "data_by_camera"
     output_file = "ground_truth_histograms.pkl"
     
-    print(f"Searching for camera files in {data_dir}...")
-    all_camera_files = [str(f) for f in Path(data_dir).glob("*.parquet")]
-    print(f"Found {len(all_camera_files)} camera files.")
+    # Load and filter camera data using the new utility
+    valid_cameras = load_and_filter_camera_data()
     
     print("\nStarting parallel processing of all camera data with fixed bandwidths...")
     results = Parallel(n_jobs=-1)(
-        delayed(process_camera_file)(f, N_BINS) for f in tqdm(all_camera_files)
+        delayed(process_camera_file)(cam_info, N_BINS) for cam_info in tqdm(valid_cameras)
     )
     
     # Filter out None results from cameras that were skipped

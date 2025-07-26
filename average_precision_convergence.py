@@ -25,8 +25,8 @@ def print_analysis_header():
 
 def get_ground_truth_precision():
     """Get precomputed ground truth TP ratio"""
-    gt_avg_precision_across_cameras = 0.0548  # Correct average TP ratio across all cameras
-    print(f"Using precomputed ground truth TP ratio: {gt_avg_precision_across_cameras:.4f}")
+    gt_avg_precision_across_cameras = 0.05475697
+    print(f"Using recomputed ground truth TP ratio: {gt_avg_precision_across_cameras:.8f}")
     return gt_avg_precision_across_cameras
 
 def get_default_proportions():

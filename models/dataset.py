@@ -62,16 +62,9 @@ class CameraDensityDatasetPrecisionAware(Dataset):
         
         return min(k, camera_size)
 
-    def _prepare_features(self, sample_df: pd.DataFrame, k: int) -> torch.Tensor:
-        """Prepare features with log-scale normalization"""
-        base_features = torch.tensor(sample_df[['max_proba', 'is_theft']].values, dtype=torch.float32)
-        
-        # Log-scale normalization
-        max_size = self.sample_size_range[1]
-        k_normalized = np.log(k) / np.log(max_size)
-        k_feature = torch.full((k, 1), fill_value=k_normalized, dtype=torch.float32)
-        
-        return torch.cat([base_features, k_feature], dim=1)
+    def _prepare_features(self, sample_df: pd.DataFrame) -> torch.Tensor:
+        """Prepare features"""
+        return torch.tensor(sample_df[['max_proba', 'is_theft']].values, dtype=torch.float32)
 
     def __getitem__(self, idx):
         camera = self.camera_data[idx]
@@ -81,7 +74,7 @@ class CameraDensityDatasetPrecisionAware(Dataset):
         # Smart sampling
         k = self._get_sample_size(camera_size)
         sample_df = df.sample(n=k, replace=False)
-        sample_features = self._prepare_features(sample_df, k)
+        sample_features = self._prepare_features(sample_df)
         
         tp_density = torch.tensor(camera['tp_density'], dtype=torch.float32)
         fp_density = torch.tensor(camera['fp_density'], dtype=torch.float32)
@@ -97,7 +90,7 @@ def collate_fn(batch):
         return None, None, None, None, None, None
     
     max_len = max(len(f) for f in features)
-    padded = torch.zeros(len(features), max_len, 3)
+    padded = torch.zeros(len(features), max_len, 2)
     for i, f in enumerate(features): 
         padded[i, :len(f), :] = f
     

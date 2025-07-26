@@ -35,7 +35,9 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def run_training_loop(model, train_loader, val_loader, optimizer, args, best_model_path):
     """Run the main training loop"""
-    best_precision_score = -1.0
+    best_val_distribution_loss = float('inf')
+    patience = 7
+    patience_counter = 0
     
     for epoch in range(1, args.epochs + 1):
         # Train for one epoch
@@ -44,20 +46,28 @@ def run_training_loop(model, train_loader, val_loader, optimizer, args, best_mod
         # Validate for one epoch
         val_losses = validate_epoch(model, val_loader, args, DEVICE)
         
-        # Check if this is the best model so far
-        precision_score = -val_losses[3]  # Negative validation precision loss
-        is_best = precision_score > best_precision_score
+        # Check if this is the best model so far based on distribution loss
+        current_val_dist_loss = val_losses[2]
+        is_best = current_val_dist_loss < best_val_distribution_loss
         
         if is_best:
-            best_precision_score = precision_score
-            save_best_model(model, optimizer, epoch, precision_score, 
+            best_val_distribution_loss = current_val_dist_loss
+            save_best_model(model, optimizer, epoch, best_val_distribution_loss, 
                            train_losses[0], val_losses[0], 
-                           train_losses[3], val_losses[3], args, best_model_path)
+                           train_losses[2], val_losses[2], args, best_model_path)
+            patience_counter = 0
+        else:
+            patience_counter += 1
         
         # Print epoch summary
         print_epoch_summary(epoch, train_losses, val_losses, is_best)
+
+        # Early stopping
+        if patience_counter >= patience:
+            print(f"No improvement in validation distribution loss for {patience} epochs. Stopping early.")
+            break
     
-    return best_precision_score
+    return best_val_distribution_loss
 
 def main(args):
     """Main training function - now much shorter and more readable"""
@@ -76,11 +86,11 @@ def main(args):
     plots_dir, best_model_path = setup_directories()
     
     # Run training loop
-    best_precision_score = run_training_loop(model, train_loader, val_loader, 
+    best_val_dist_loss = run_training_loop(model, train_loader, val_loader, 
                                            optimizer, args, best_model_path)
     
     # Print completion message
-    print_training_complete(best_model_path, best_precision_score)
+    print_training_complete(best_model_path, best_val_dist_loss)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -93,5 +103,5 @@ if __name__ == "__main__":
     parser.add_argument('--weight_decay', type=float, default=DEFAULT_WEIGHT_DECAY, help='Weight decay for optimizer regularization')
     parser.add_argument('--density_weight', type=float, default=1.0, help='Weight for density loss')
     parser.add_argument('--distribution_weight', type=float, default=2.0, help='Weight for Beta distribution loss')
-    parser.add_argument('--precision_weight', type=float, default=1.0, help='Weight for mean precision loss')
+    parser.add_argument('--precision_weight', type=float, default=0.1, help='Weight for mean precision loss')
     main(parser.parse_args()) 

@@ -27,10 +27,7 @@ def load_precision_aware_model():
 
 def predict_densities_and_ratio_precision_aware(model, sample_data, sample_size):
     """Make predictions using the precision-aware model"""
-    features = np.concatenate([
-        sample_data[['max_proba', 'is_theft']].values,
-        np.full((len(sample_data), 1), np.log(sample_size) / np.log(2000))
-    ], axis=1)
+    features = sample_data[['max_proba', 'is_theft']].values
     features_tensor = torch.tensor(features, dtype=torch.float32).unsqueeze(0).to(DEVICE)
     counts = torch.tensor([sample_size], dtype=torch.float32).to(DEVICE)
     

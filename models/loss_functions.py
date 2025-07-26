@@ -64,12 +64,12 @@ def mixture_logistic_loss(mixture_weights, mixture_locations, mixture_scales, ta
     
     # Negative log-likelihood
     nll_loss = -torch.log(pdf_values + 1e-9).mean()
-    
+
     return nll_loss
 
 def precision_aware_loss(pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales, 
                         target_tp, target_fp, target_ratio, target_precision, sample_sizes, 
-                        density_weight=1.0, distribution_weight=2.0, precision_weight=1.0):
+                        density_weight=1.0, distribution_weight=2.0, precision_weight=0.1):
     """
     Combined loss with mixture of logistic distributions for TP ratio uncertainty
     """
@@ -79,13 +79,13 @@ def precision_aware_loss(pred_tp, pred_fp, mixture_weights, mixture_locations, m
     # Mixture logistic distribution loss (encourages proper uncertainty modeling)
     distribution_loss = mixture_logistic_loss(mixture_weights, mixture_locations, mixture_scales, target_precision)
     
-    # Mean prediction loss (ensures mean is correct)
+    # Mean prediction loss (re-enabled with small weight to encourage sharper predictions)
     predicted_precision = calculate_predicted_precision(pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales, sample_sizes)
     precision_loss = F.mse_loss(predicted_precision, target_precision)
     
     # Combined loss with weights
     total_loss = (density_weight * density_loss + 
-                  distribution_weight * distribution_loss + 
+                  distribution_weight * distribution_loss +
                   precision_weight * precision_loss)
     
     return total_loss, density_loss, distribution_loss, precision_loss 

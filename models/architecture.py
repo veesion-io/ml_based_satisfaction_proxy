@@ -46,7 +46,7 @@ class DeepSetsPrecisionAware(nn.Module):
             phi_dim = (phi_dim // num_heads + 1) * num_heads
         
         self.phi = nn.Sequential(
-            nn.Linear(3, phi_dim),
+            nn.Linear(2, phi_dim),
             nn.Dropout(dropout_rate),
             ResidualMLP(phi_dim, dropout_rate), 
             ResidualMLP(phi_dim, dropout_rate)
