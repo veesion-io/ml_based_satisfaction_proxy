@@ -47,9 +47,8 @@ def objective(trial, train_data, val_data, n_epochs=10):
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
     
     # Loss weights
-    density_weight = trial.suggest_float('density_weight', 0.1, 3.0)
     distribution_weight = trial.suggest_float('distribution_weight', 0.1, 5.0)
-    precision_weight = trial.suggest_float('precision_weight', 0.1, 3.0)
+    precision_weight = trial.suggest_float('precision_weight', 0.01, 0.5, log=True)
     
     # Ensure phi_dim is divisible by num_heads
     if phi_dim % num_heads != 0:
@@ -84,14 +83,13 @@ def objective(trial, train_data, val_data, n_epochs=10):
                 if batch[0] is None: 
                     continue
                 
-                features, gt_tp, gt_fp, gt_ratio, gt_precision, counts = [b.to(DEVICE) for b in batch]
+                features, gt_precision, counts = [b.to(DEVICE) for b in batch]
                 optimizer.zero_grad()
-                pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales = model(features, counts)
+                mixture_weights, mixture_locations, mixture_scales = model(features, counts)
                 
-                total_loss, density_loss, distribution_loss, precision_loss = precision_aware_loss(
-                    pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales, 
-                    gt_tp, gt_fp, gt_ratio, gt_precision, counts,
-                    density_weight=density_weight, 
+                total_loss, distribution_loss, precision_loss = precision_aware_loss(
+                    mixture_weights, mixture_locations, mixture_scales, 
+                    gt_precision,
                     distribution_weight=distribution_weight, 
                     precision_weight=precision_weight
                 )
@@ -105,7 +103,7 @@ def objective(trial, train_data, val_data, n_epochs=10):
             
             # Validation
             model.eval()
-            total_val_precision_loss = 0
+            total_val_dist_loss = 0
             val_batches = 0
             
             with torch.no_grad():
@@ -113,25 +111,24 @@ def objective(trial, train_data, val_data, n_epochs=10):
                     if batch[0] is None: 
                         continue
                     
-                    features, gt_tp, gt_fp, gt_ratio, gt_precision, counts = [b.to(DEVICE) for b in batch]
-                    pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales = model(features, counts)
+                    features, gt_precision, counts = [b.to(DEVICE) for b in batch]
+                    mixture_weights, mixture_locations, mixture_scales = model(features, counts)
                     
-                    total_loss, density_loss, distribution_loss, precision_loss = precision_aware_loss(
-                        pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales, 
-                        gt_tp, gt_fp, gt_ratio, gt_precision, counts,
-                        density_weight=density_weight, 
+                    total_loss, distribution_loss, precision_loss = precision_aware_loss(
+                        mixture_weights, mixture_locations, mixture_scales, 
+                        gt_precision,
                         distribution_weight=distribution_weight, 
                         precision_weight=precision_weight
                     )
                     
-                    total_val_precision_loss += precision_loss.item()
+                    total_val_dist_loss += distribution_loss.item()
                     val_batches += 1
             
-            avg_val_precision_loss = total_val_precision_loss / max(val_batches, 1)
+            avg_val_dist_loss = total_val_dist_loss / max(val_batches, 1)
             
-            # Early stopping based on precision loss
-            if avg_val_precision_loss < best_val_precision_loss:
-                best_val_precision_loss = avg_val_precision_loss
+            # Early stopping based on distribution loss
+            if avg_val_dist_loss < best_val_precision_loss:
+                best_val_precision_loss = avg_val_dist_loss
                 patience_counter = 0
             else:
                 patience_counter += 1
@@ -139,7 +136,7 @@ def objective(trial, train_data, val_data, n_epochs=10):
                     break
             
             # Report intermediate value for pruning
-            trial.report(avg_val_precision_loss, epoch)
+            trial.report(avg_val_dist_loss, epoch)
             
             # Handle pruning based on the intermediate value
             if trial.should_prune():
@@ -195,7 +192,7 @@ def run_hyperparameter_tuning(args):
     
     print(f"Number of finished trials: {len(study.trials)}")
     print(f"Best trial: {study.best_trial.number}")
-    print(f"Best validation precision loss: {study.best_value:.6f}")
+    print(f"Best validation distribution loss: {study.best_value:.6f}")
     
     print("\nBest parameters:")
     for key, value in study.best_params.items():

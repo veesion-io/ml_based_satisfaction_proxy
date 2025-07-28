@@ -101,7 +101,6 @@ if __name__ == "__main__":
     parser.add_argument('--num_heads', type=int, default=DEFAULT_NUM_HEADS)
     parser.add_argument('--dropout_rate', type=float, default=DEFAULT_DROPOUT_RATE, help='Dropout rate for regularization')
     parser.add_argument('--weight_decay', type=float, default=DEFAULT_WEIGHT_DECAY, help='Weight decay for optimizer regularization')
-    parser.add_argument('--density_weight', type=float, default=1.0, help='Weight for density loss')
-    parser.add_argument('--distribution_weight', type=float, default=2.0, help='Weight for Beta distribution loss')
+    parser.add_argument('--distribution_weight', type=float, default=1.0, help='Weight for Beta distribution loss')
     parser.add_argument('--precision_weight', type=float, default=0.1, help='Weight for mean precision loss')
     main(parser.parse_args()) 

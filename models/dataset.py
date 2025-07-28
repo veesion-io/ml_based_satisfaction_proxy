@@ -10,6 +10,9 @@ from torch.utils.data import Dataset
 from typing import List, Dict, Tuple
 from tqdm import tqdm
 import random
+import multiprocessing
+from joblib import Parallel, delayed
+from torch.nn.utils.rnn import pad_sequence
 
 N_BINS = 20
 SAMPLE_SIZE_RANGE = (10, 2000)
@@ -17,82 +20,86 @@ SAMPLE_SIZE_RANGE = (10, 2000)
 class CameraDensityDatasetPrecisionAware(Dataset):
     def __init__(self, processed_data: List[Dict], sample_size_range: Tuple[int, int]):
         self.sample_size_range = sample_size_range
-        self.camera_data = processed_data
-        self.df_cache = {}
-        
-        # Cache DataFrames and calculate TP ratios + ground truth precision
-        print("Caching DataFrames and calculating TP ratios + GT precision...")
-        for cam in tqdm(processed_data, desc="Processing cameras"):
-            df = pd.read_parquet(cam['file_path'])
-            self.df_cache[cam['file_path']] = df
-            
-            # Calculate TP ratio
-            total_alerts = len(df)
-            tp_alerts = len(df[df['is_theft'] == 1])
-            tp_ratio = tp_alerts / total_alerts if total_alerts > 0 else 0.0
-            cam['tp_ratio'] = tp_ratio
-            
-            # Calculate ground truth TP ratio (simple precision)
-            gt_precision = self.calculate_ground_truth_precision(df)
-            cam['gt_precision'] = gt_precision
+        self.precomputed_data = self._precompute_data(processed_data)
 
-    def calculate_ground_truth_precision(self, camera_data):
-        """Calculate ground truth TP ratio for a camera (same as what model should predict)"""
-        tp_count = len(camera_data[camera_data['is_theft'] == 1])
-        total_count = len(camera_data)
+    def _precompute_data(self, data):
+        """Precompute and cache data to reduce I/O and computation in __getitem__"""
+        print("Caching DataFrames and calculating TP ratios + GT precision...")
         
-        if total_count == 0:
-            return 0.0
-        
-        return tp_count / total_count
+        # Use joblib for parallel processing
+        num_cores = multiprocessing.cpu_count()
+        results = Parallel(n_jobs=num_cores)(
+            delayed(self._process_camera_data)(cam_data) for cam_data in tqdm(data, desc="Processing cameras")
+        )
+        return [res for res in results if res is not None]
+
+    def _process_camera_data(self, cam_data):
+        """Helper to process a single camera's data"""
+        try:
+            df = pd.read_parquet(cam_data['file_path'])
+            if len(df) < self.sample_size_range[0]:
+                return None
+                
+            tp_count = df['is_theft'].sum()
+            fp_count = len(df) - tp_count
+            
+            if tp_count == 0 or fp_count == 0:
+                return None
+            
+            gt_precision = tp_count / (tp_count + fp_count)
+            
+            return {
+                'df': df,
+                'gt_precision': gt_precision,
+                'camera_size': len(df)
+            }
+        except Exception:
+            return None
 
     def __len__(self):
-        return len(self.camera_data)
+        """Return total number of cameras"""
+        return len(self.precomputed_data)
 
-    def _get_sample_size(self, camera_size: int) -> int:
-        """Calculate sample size using smart sampling strategy"""
+    def _get_sample_size(self, camera_size):
+        """Get a random sample size within the valid range"""
         min_size, max_size = self.sample_size_range
-        
-        if random.random() < 0.7:
-            max_pct = min(0.8, max_size / camera_size) if camera_size > 0 else 0.8
-            pct = random.uniform(0.01, max_pct)
-            k = max(min_size, int(camera_size * pct))
-        else:
-            k = random.randint(min_size, min(max_size, camera_size))
-        
+        k = random.randint(min_size, min(max_size, camera_size))
+        # Ensure k is not larger than the population size for sampling without replacement
         return min(k, camera_size)
 
-    def _prepare_features(self, sample_df: pd.DataFrame) -> torch.Tensor:
+    def _prepare_features(self, sample_df: pd.DataFrame, sample_size: int) -> torch.Tensor:
         """Prepare features"""
-        return torch.tensor(sample_df[['max_proba', 'is_theft']].values, dtype=torch.float32)
+        features = sample_df[['max_proba', 'is_theft']].values
+        counts_normalized = np.log(sample_size) / np.log(2000)
+        counts_expanded = np.full((features.shape[0], 1), counts_normalized)
+        return torch.tensor(np.concatenate([features, counts_expanded], axis=1), dtype=torch.float32)
 
     def __getitem__(self, idx):
-        camera = self.camera_data[idx]
-        df = self.df_cache[camera['file_path']]
-        camera_size = len(df)
+        """Return a single data sample"""
+        camera = self.precomputed_data[idx]
+        df = camera['df']
+        camera_size = camera['camera_size']
         
-        # Smart sampling
+        # Get a random sample size and sample the data
         k = self._get_sample_size(camera_size)
-        sample_df = df.sample(n=k, replace=False)
-        sample_features = self._prepare_features(sample_df)
+        sample_df = df.sample(n=k, replace=False) # Use replace=False for more realistic sampling
+        sample_features = self._prepare_features(sample_df, k)
         
-        tp_density = torch.tensor(camera['tp_density'], dtype=torch.float32)
-        fp_density = torch.tensor(camera['fp_density'], dtype=torch.float32)
-        tp_ratio = torch.tensor(camera['tp_ratio'], dtype=torch.float32)
         gt_precision = torch.tensor(camera['gt_precision'], dtype=torch.float32)
         
-        return sample_features, tp_density, fp_density, tp_ratio, gt_precision, k
+        return sample_features, gt_precision, torch.tensor(k, dtype=torch.float32)
 
 def collate_fn(batch):
     """Custom collate function for batching variable-length sequences"""
-    features, tps, fps, ratios, precisions, counts = zip(*[b for b in batch if b is not None])
+    features, precisions, counts = zip(*[b for b in batch if b is not None])
     if not features: 
-        return None, None, None, None, None, None
+        return None, None, None
+
+    # Pad features
+    padded_features = pad_sequence(features, batch_first=True, padding_value=0.0)
     
-    max_len = max(len(f) for f in features)
-    padded = torch.zeros(len(features), max_len, 2)
-    for i, f in enumerate(features): 
-        padded[i, :len(f), :] = f
-    
-    return (padded, torch.stack(tps), torch.stack(fps), 
-            torch.stack(ratios), torch.stack(precisions), torch.tensor(counts, dtype=torch.float32)) 
+    # Reshape to ensure 3 features
+    if padded_features.dim() == 3 and padded_features.size(2) > 3:
+        padded_features = padded_features[:, :, :3]
+
+    return padded_features, torch.stack(precisions), torch.tensor(counts, dtype=torch.float32) 

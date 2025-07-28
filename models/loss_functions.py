@@ -6,13 +6,6 @@ Loss functions for precision-aware training
 import torch
 import torch.nn.functional as F
 
-def calculate_predicted_precision(tp_density, fp_density, mixture_weights, mixture_locations, mixture_scales, sample_size):
-    """Calculate predicted TP ratio from mixture of logistic distributions"""
-    # Calculate the mean of the mixture distribution
-    # Mean of mixture = Σᵢ wᵢ * μᵢ (for logistic, mean ≈ location parameter)
-    predicted_tp_ratio = torch.sum(mixture_weights * mixture_locations, dim=1)
-    return predicted_tp_ratio
-
 def mixture_logistic_cdf(x, weights, locations, scales):
     """
     Compute CDF of mixture of logistic distributions: P(X ≤ x) = Σᵢ wᵢ * σ((x - μᵢ) / sᵢ)
@@ -67,25 +60,28 @@ def mixture_logistic_loss(mixture_weights, mixture_locations, mixture_scales, ta
 
     return nll_loss
 
-def precision_aware_loss(pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales, 
-                        target_tp, target_fp, target_ratio, target_precision, sample_sizes, 
-                        density_weight=1.0, distribution_weight=2.0, precision_weight=0.1):
+def precision_aware_loss(mixture_weights, mixture_locations, mixture_scales, 
+                        target_precision, 
+                        distribution_weight=1.0, precision_weight=0.1):
     """
     Combined loss with mixture of logistic distributions for TP ratio uncertainty
     """
-    # Traditional density losses
-    density_loss = F.mse_loss(pred_tp, target_tp) + F.mse_loss(pred_fp, target_fp)
-    
     # Mixture logistic distribution loss (encourages proper uncertainty modeling)
     distribution_loss = mixture_logistic_loss(mixture_weights, mixture_locations, mixture_scales, target_precision)
     
     # Mean prediction loss (re-enabled with small weight to encourage sharper predictions)
-    predicted_precision = calculate_predicted_precision(pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales, sample_sizes)
+    predicted_precision = torch.sum(mixture_weights * mixture_locations, dim=1)
     precision_loss = F.mse_loss(predicted_precision, target_precision)
     
     # Combined loss with weights
-    total_loss = (density_weight * density_loss + 
-                  distribution_weight * distribution_loss +
+    total_loss = (distribution_weight * distribution_loss +
                   precision_weight * precision_loss)
     
-    return total_loss, density_loss, distribution_loss, precision_loss 
+    return total_loss, distribution_loss, precision_loss
+
+def calculate_predicted_precision(*args, **kwargs):
+    """
+    DEPRECATED: This function is now part of the loss function itself.
+    This stub is kept for compatibility with older analysis scripts.
+    """
+    return 0.0 

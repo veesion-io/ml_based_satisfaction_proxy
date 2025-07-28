@@ -62,7 +62,6 @@ def train_epoch(model, train_loader, optimizer, args, device):
     """Train model for one epoch"""
     model.train()
     total_train_loss = 0
-    total_train_density_loss = 0
     total_train_distribution_loss = 0
     total_train_precision_loss = 0
     
@@ -70,14 +69,13 @@ def train_epoch(model, train_loader, optimizer, args, device):
         if batch[0] is None: 
             continue
         
-        features, gt_tp, gt_fp, gt_ratio, gt_precision, counts = [b.to(device) for b in batch]
+        features, gt_precision, counts = [b.to(device) for b in batch]
         optimizer.zero_grad()
-        pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales = model(features, counts)
+        mixture_weights, mixture_locations, mixture_scales = model(features, counts)
         
-        total_loss, density_loss, distribution_loss, precision_loss = precision_aware_loss(
-            pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales, 
-            gt_tp, gt_fp, gt_ratio, gt_precision, counts,
-            density_weight=args.density_weight, 
+        total_loss, distribution_loss, precision_loss = precision_aware_loss(
+            mixture_weights, mixture_locations, mixture_scales, 
+            gt_precision,
             distribution_weight=args.distribution_weight, 
             precision_weight=args.precision_weight
         )
@@ -87,19 +85,16 @@ def train_epoch(model, train_loader, optimizer, args, device):
         optimizer.step()
         
         total_train_loss += total_loss.item()
-        total_train_density_loss += density_loss.item()
         total_train_distribution_loss += distribution_loss.item()
         total_train_precision_loss += precision_loss.item()
     
     n_batches = len(train_loader)
-    return (total_train_loss / n_batches, total_train_density_loss / n_batches,
-            total_train_distribution_loss / n_batches, total_train_precision_loss / n_batches)
+    return total_train_loss / n_batches, total_train_distribution_loss / n_batches, total_train_precision_loss / n_batches
 
 def validate_epoch(model, val_loader, args, device):
     """Validate model for one epoch"""
     model.eval()
     total_val_loss = 0
-    total_val_density_loss = 0
     total_val_distribution_loss = 0
     total_val_precision_loss = 0
     
@@ -108,25 +103,22 @@ def validate_epoch(model, val_loader, args, device):
             if batch[0] is None: 
                 continue
             
-            features, gt_tp, gt_fp, gt_ratio, gt_precision, counts = [b.to(device) for b in batch]
-            pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales = model(features, counts)
+            features, gt_precision, counts = [b.to(device) for b in batch]
+            mixture_weights, mixture_locations, mixture_scales = model(features, counts)
             
-            total_loss, density_loss, distribution_loss, precision_loss = precision_aware_loss(
-                pred_tp, pred_fp, mixture_weights, mixture_locations, mixture_scales, 
-                gt_tp, gt_fp, gt_ratio, gt_precision, counts,
-                density_weight=args.density_weight, 
+            total_loss, distribution_loss, precision_loss = precision_aware_loss(
+                mixture_weights, mixture_locations, mixture_scales, 
+                gt_precision,
                 distribution_weight=args.distribution_weight, 
                 precision_weight=args.precision_weight
             )
             
             total_val_loss += total_loss.item()
-            total_val_density_loss += density_loss.item()
             total_val_distribution_loss += distribution_loss.item()
             total_val_precision_loss += precision_loss.item()
     
     n_batches = len(val_loader)
-    return (total_val_loss / n_batches, total_val_density_loss / n_batches,
-            total_val_distribution_loss / n_batches, total_val_precision_loss / n_batches)
+    return total_val_loss / n_batches, total_val_distribution_loss / n_batches, total_val_precision_loss / n_batches
 
 def save_best_model(model, optimizer, epoch, distribution_loss, train_loss, val_loss, 
                    train_distribution_loss, val_distribution_loss, args, best_model_path):
@@ -146,7 +138,6 @@ def save_best_model(model, optimizer, epoch, distribution_loss, train_loss, val_
             'phi_dim': args.phi_dim,
             'num_heads': args.num_heads,
             'epochs': args.epochs,
-            'density_weight': args.density_weight,
             'distribution_weight': args.distribution_weight,
             'precision_weight': args.precision_weight,
             'dropout_rate': args.dropout_rate,
@@ -156,14 +147,12 @@ def save_best_model(model, optimizer, epoch, distribution_loss, train_loss, val_
 
 def print_epoch_summary(epoch, train_losses, val_losses, is_best=False):
     """Print training summary for an epoch"""
-    train_loss, train_density_loss, train_distribution_loss, train_precision_loss = train_losses
-    val_loss, val_density_loss, val_distribution_loss, val_precision_loss = val_losses
+    train_loss, train_distribution_loss, train_precision_loss = train_losses
+    val_loss, val_distribution_loss, val_precision_loss = val_losses
     
     status = "✅ BEST MODEL SAVED" if is_best else ""
-    print(f"Epoch {epoch} | Train: {train_loss:.4f} (D:{train_density_loss:.4f}, "
-          f"B:{train_distribution_loss:.4f}, P:{train_precision_loss:.4f}) | "
-          f"Val: {val_loss:.4f} (D:{val_density_loss:.4f}, "
-          f"B:{val_distribution_loss:.4f}, P:{val_precision_loss:.4f}) | {status}")
+    print(f"Epoch {epoch} | Train: {train_loss:.4f} (D:{train_distribution_loss:.4f}, P:{train_precision_loss:.4f}) | "
+          f"Val: {val_loss:.4f} (D:{val_distribution_loss:.4f}, P:{val_precision_loss:.4f}) | {status}")
 
 def print_training_setup(device, args):
     """Print training setup information"""
