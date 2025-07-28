@@ -87,13 +87,14 @@ class CameraDensityDatasetPrecisionAware(Dataset):
         
         gt_precision = torch.tensor(camera['gt_precision'], dtype=torch.float32)
         
-        return sample_features, gt_precision, torch.tensor(k, dtype=torch.float32)
+        # Return log of count for stable adversary training
+        return sample_features, gt_precision, torch.tensor(k, dtype=torch.float32), torch.log(torch.tensor(k, dtype=torch.float32))
 
 def collate_fn(batch):
     """Custom collate function for batching variable-length sequences"""
-    features, precisions, counts = zip(*[b for b in batch if b is not None])
+    features, precisions, counts, log_counts = zip(*[b for b in batch if b is not None])
     if not features: 
-        return None, None, None
+        return None, None, None, None
 
     # Pad features
     padded_features = pad_sequence(features, batch_first=True, padding_value=0.0)
@@ -102,4 +103,4 @@ def collate_fn(batch):
     if padded_features.dim() == 3 and padded_features.size(2) > 3:
         padded_features = padded_features[:, :, :3]
 
-    return padded_features, torch.stack(precisions), torch.tensor(counts, dtype=torch.float32) 
+    return padded_features, torch.stack(precisions), torch.tensor(counts, dtype=torch.float32), torch.stack(log_counts) 

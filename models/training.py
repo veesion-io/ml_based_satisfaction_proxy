@@ -13,7 +13,7 @@ import pickle
 
 from .dataset import CameraDensityDatasetPrecisionAware, collate_fn
 from .architecture import DeepSetsPrecisionAware
-from .loss_functions import precision_aware_loss
+from .loss_functions import precision_aware_loss, adversary_loss
 
 # Constants
 N_BINS = 20
@@ -42,11 +42,15 @@ def create_data_loaders(train_ds, val_ds, batch_size):
                            num_workers=4, collate_fn=collate_fn)
     return train_loader, val_loader
 
-def create_model_and_optimizer(args, device):
+def create_model_and_optimizers(args, device):
     """Create model and optimizer"""
     model = DeepSetsPrecisionAware(args.phi_dim, N_BINS, args.num_heads, args.dropout_rate).to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
-    return model, optimizer
+    
+    # Create adversary optimizer
+    adversary_optimizer = optim.Adam(model.adversary.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    
+    return model, optimizer, adversary_optimizer
 
 def setup_directories():
     """Set up necessary directories"""
@@ -58,27 +62,47 @@ def setup_directories():
     
     return plots_dir, best_model_path
 
-def train_epoch(model, train_loader, optimizer, args, device):
+def train_epoch(model, train_loader, optimizer, adversary_optimizer, args, device):
     """Train model for one epoch"""
     model.train()
     total_train_loss = 0
     total_train_distribution_loss = 0
     total_train_precision_loss = 0
+    total_train_adversary_loss = 0
     
     for batch in tqdm(train_loader, desc="Training"):
         if batch[0] is None: 
             continue
         
-        features, gt_precision, counts = [b.to(device) for b in batch]
-        optimizer.zero_grad()
-        mixture_weights, mixture_locations, mixture_scales = model(features, counts)
+        features, gt_precision, counts, log_counts = [b.to(device) for b in batch]
         
+        # --- Adversary training ---
+        adversary_optimizer.zero_grad()
+        _, _, _, rho_out = model(features, counts)
+        adversary_pred = model.adversary(rho_out.detach()) # Detach from main model's graph
+        
+        adv_loss = adversary_loss(adversary_pred, log_counts)
+        adv_loss.backward()
+        adversary_optimizer.step()
+        
+        # --- Main model training ---
+        optimizer.zero_grad()
+        mixture_weights, mixture_locations, mixture_scales, rho_out = model(features, counts)
+        
+        # Main loss
         total_loss, distribution_loss, precision_loss = precision_aware_loss(
             mixture_weights, mixture_locations, mixture_scales, 
             gt_precision,
             distribution_weight=args.distribution_weight, 
             precision_weight=args.precision_weight
         )
+        
+        # Adversarial loss for the main model (we want to maximize the adversary's loss)
+        adversary_pred_main = model.adversary(rho_out)
+        adv_loss_main = -args.adversary_weight * adversary_loss(adversary_pred_main, log_counts)
+        
+        # Combine losses
+        total_loss += adv_loss_main
         
         total_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -87,9 +111,13 @@ def train_epoch(model, train_loader, optimizer, args, device):
         total_train_loss += total_loss.item()
         total_train_distribution_loss += distribution_loss.item()
         total_train_precision_loss += precision_loss.item()
+        total_train_adversary_loss += adv_loss.item()
     
     n_batches = len(train_loader)
-    return total_train_loss / n_batches, total_train_distribution_loss / n_batches, total_train_precision_loss / n_batches
+    return (total_train_loss / n_batches, 
+            total_train_distribution_loss / n_batches, 
+            total_train_precision_loss / n_batches,
+            total_train_adversary_loss / n_batches)
 
 def validate_epoch(model, val_loader, args, device):
     """Validate model for one epoch"""
@@ -97,15 +125,17 @@ def validate_epoch(model, val_loader, args, device):
     total_val_loss = 0
     total_val_distribution_loss = 0
     total_val_precision_loss = 0
+    total_val_adversary_loss = 0 # For logging
     
     with torch.no_grad():
         for batch in tqdm(val_loader, desc="Validation"):
             if batch[0] is None: 
                 continue
             
-            features, gt_precision, counts = [b.to(device) for b in batch]
-            mixture_weights, mixture_locations, mixture_scales = model(features, counts)
+            features, gt_precision, counts, log_counts = [b.to(device) for b in batch]
+            mixture_weights, mixture_locations, mixture_scales, rho_out = model(features, counts)
             
+            # Main loss
             total_loss, distribution_loss, precision_loss = precision_aware_loss(
                 mixture_weights, mixture_locations, mixture_scales, 
                 gt_precision,
@@ -113,12 +143,20 @@ def validate_epoch(model, val_loader, args, device):
                 precision_weight=args.precision_weight
             )
             
+            # Adversary loss (for logging only)
+            adversary_pred = model.adversary(rho_out)
+            adv_loss = adversary_loss(adversary_pred, log_counts)
+            
             total_val_loss += total_loss.item()
             total_val_distribution_loss += distribution_loss.item()
             total_val_precision_loss += precision_loss.item()
+            total_val_adversary_loss += adv_loss.item()
     
     n_batches = len(val_loader)
-    return total_val_loss / n_batches, total_val_distribution_loss / n_batches, total_val_precision_loss / n_batches
+    return (total_val_loss / n_batches, 
+            total_val_distribution_loss / n_batches, 
+            total_val_precision_loss / n_batches,
+            total_val_adversary_loss / n_batches)
 
 def save_best_model(model, optimizer, epoch, distribution_loss, train_loss, val_loss, 
                    train_distribution_loss, val_distribution_loss, args, best_model_path):
@@ -147,12 +185,12 @@ def save_best_model(model, optimizer, epoch, distribution_loss, train_loss, val_
 
 def print_epoch_summary(epoch, train_losses, val_losses, is_best=False):
     """Print training summary for an epoch"""
-    train_loss, train_distribution_loss, train_precision_loss = train_losses
-    val_loss, val_distribution_loss, val_precision_loss = val_losses
+    train_loss, train_distribution_loss, train_precision_loss, train_adversary_loss = train_losses
+    val_loss, val_distribution_loss, val_precision_loss, val_adversary_loss = val_losses
     
     status = "✅ BEST MODEL SAVED" if is_best else ""
-    print(f"Epoch {epoch} | Train: {train_loss:.4f} (D:{train_distribution_loss:.4f}, P:{train_precision_loss:.4f}) | "
-          f"Val: {val_loss:.4f} (D:{val_distribution_loss:.4f}, P:{val_precision_loss:.4f}) | {status}")
+    print(f"Epoch {epoch} | Train: {train_loss:.4f} (D:{train_distribution_loss:.4f}, P:{train_precision_loss:.4f}, A:{train_adversary_loss:.4f}) | "
+          f"Val: {val_loss:.4f} (D:{val_distribution_loss:.4f}, P:{val_precision_loss:.4f}, A:{val_adversary_loss:.4f}) | {status}")
 
 def print_training_setup(device, args):
     """Print training setup information"""

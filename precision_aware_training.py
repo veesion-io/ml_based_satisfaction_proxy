@@ -11,7 +11,7 @@ from models import (
     load_data,
     create_datasets, 
     create_data_loaders,
-    create_model_and_optimizer,
+    create_model_and_optimizers,
     setup_directories,
     train_epoch,
     validate_epoch,
@@ -33,7 +33,7 @@ DEFAULT_DROPOUT_RATE = 0.1
 DEFAULT_WEIGHT_DECAY = 1e-4
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def run_training_loop(model, train_loader, val_loader, optimizer, args, best_model_path):
+def run_training_loop(model, train_loader, val_loader, optimizer, adversary_optimizer, args, best_model_path):
     """Run the main training loop"""
     best_val_distribution_loss = float('inf')
     patience = 7
@@ -41,7 +41,7 @@ def run_training_loop(model, train_loader, val_loader, optimizer, args, best_mod
     
     for epoch in range(1, args.epochs + 1):
         # Train for one epoch
-        train_losses = train_epoch(model, train_loader, optimizer, args, DEVICE)
+        train_losses = train_epoch(model, train_loader, optimizer, adversary_optimizer, args, DEVICE)
         
         # Validate for one epoch
         val_losses = validate_epoch(model, val_loader, args, DEVICE)
@@ -74,20 +74,25 @@ def main(args):
     # Print setup information
     print_training_setup(DEVICE, args)
     
+    # Ensure phi_dim is a multiple of num_heads
+    if args.phi_dim % args.num_heads != 0:
+        args.phi_dim = (args.phi_dim // args.num_heads) * args.num_heads
+        print(f"Adjusted phi_dim to {args.phi_dim} to be divisible by num_heads.")
+    
     # Load and prepare data
     train_data, val_data = load_data()
     train_ds, val_ds = create_datasets(train_data, val_data)
     train_loader, val_loader = create_data_loaders(train_ds, val_ds, args.batch_size)
     
     # Create model and optimizer
-    model, optimizer = create_model_and_optimizer(args, DEVICE)
+    model, optimizer, adversary_optimizer = create_model_and_optimizers(args, DEVICE)
     
     # Setup directories
     plots_dir, best_model_path = setup_directories()
     
     # Run training loop
     best_val_dist_loss = run_training_loop(model, train_loader, val_loader, 
-                                           optimizer, args, best_model_path)
+                                           optimizer, adversary_optimizer, args, best_model_path)
     
     # Print completion message
     print_training_complete(best_model_path, best_val_dist_loss)
@@ -103,4 +108,5 @@ if __name__ == "__main__":
     parser.add_argument('--weight_decay', type=float, default=DEFAULT_WEIGHT_DECAY, help='Weight decay for optimizer regularization')
     parser.add_argument('--distribution_weight', type=float, default=1.0, help='Weight for Beta distribution loss')
     parser.add_argument('--precision_weight', type=float, default=0.1, help='Weight for mean precision loss')
+    parser.add_argument('--adversary_weight', type=float, default=0.01, help='Weight for adversarial loss')
     main(parser.parse_args()) 

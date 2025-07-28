@@ -31,6 +31,9 @@ def mixture_logistic_pdf(x, weights, locations, scales):
     if x.dim() == 1:
         x = x.unsqueeze(1)  # (batch_size, 1)
     
+    # Add a small epsilon to scales to prevent division by zero
+    scales = scales + 1e-9
+
     # Compute (x - μᵢ) / sᵢ for all components
     standardized = (x - locations) / scales  # (batch_size, num_components)
     
@@ -78,6 +81,12 @@ def precision_aware_loss(mixture_weights, mixture_locations, mixture_scales,
                   precision_weight * precision_loss)
     
     return total_loss, distribution_loss, precision_loss
+
+def adversary_loss(adversary_pred, counts):
+    """
+    Loss for the adversary - tries to predict the number of alerts.
+    """
+    return F.mse_loss(adversary_pred.squeeze(), counts.float())
 
 def calculate_predicted_precision(*args, **kwargs):
     """

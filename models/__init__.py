@@ -4,19 +4,12 @@ Models package for precision-aware training
 """
 
 from .dataset import CameraDensityDatasetPrecisionAware, collate_fn
-from .architecture import ResidualMLP, MAB, DeepSetsPrecisionAware
-from .loss_functions import (
-    calculate_predicted_precision,
-    mixture_logistic_cdf,
-    mixture_logistic_pdf,
-    mixture_logistic_loss,
-    precision_aware_loss
-)
+from .loss_functions import precision_aware_loss, calculate_predicted_precision
 from .training import (
     load_data,
     create_datasets,
     create_data_loaders,
-    create_model_and_optimizer,
+    create_model_and_optimizers,
     setup_directories,
     train_epoch,
     validate_epoch,
@@ -32,7 +25,7 @@ __all__ = [
     'collate_fn',
     # Architecture
     'ResidualMLP',
-    'MAB', 
+    'MAB',
     'DeepSetsPrecisionAware',
     # Loss functions
     'calculate_predicted_precision',
@@ -44,7 +37,7 @@ __all__ = [
     'load_data',
     'create_datasets',
     'create_data_loaders',
-    'create_model_and_optimizer',
+    'create_model_and_optimizers',
     'setup_directories',
     'train_epoch',
     'validate_epoch',
