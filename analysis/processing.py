@@ -12,6 +12,7 @@ from tqdm import tqdm
 import random
 
 from .model_loader import load_precision_aware_model, predict_average_precision_aware_with_uncertainty
+from .noise_tuning import NoiseTuner
 
 def load_camera_paths():
     """Load camera file paths from ground truth data"""
@@ -58,7 +59,7 @@ def prepare_multiprocessing_args(camera_path_chunks, proportions, gt_avg_precisi
     ]
     return args_list
 
-def process_single_camera(camera_file_path, proportions, gt_avg_precision_across_cameras, model):
+def process_single_camera(camera_file_path, proportions, gt_avg_precision_across_cameras, model, noise_tuner):
     """Process a single camera for all proportions"""
     results = []
     
@@ -91,25 +92,28 @@ def process_single_camera(camera_file_path, proportions, gt_avg_precision_across
                 model, sample_data, sample_size
             )
             
+            # Adjust uncertainty with noise tuner
+            adjusted_uncertainty_info = noise_tuner.tune_noise(uncertainty_info, sample_size)
+
             # Store result with distribution info and mixture parameters
             results.append({
                 'camera_size': camera_size,
                 'proportion': proportion,
                 'sample_size': sample_size,
                 'gt_avg_precision': gt_avg_precision_across_cameras,
-                'pred_mean': uncertainty_info['mean'],
-                'pred_std': uncertainty_info['std'],
-                'pred_variance': uncertainty_info['variance'],
-                'pred_median': uncertainty_info['median'],
-                'pred_mode': uncertainty_info['mode'],
-                'pred_p05': uncertainty_info['ci_lower'],
-                'pred_p25': uncertainty_info['p25'],
-                'pred_p75': uncertainty_info['p75'],
-                'pred_p95': uncertainty_info['ci_upper'],
+                'pred_mean': adjusted_uncertainty_info['mean'],
+                'pred_std': adjusted_uncertainty_info['std'],
+                'pred_variance': adjusted_uncertainty_info['variance'],
+                'pred_median': adjusted_uncertainty_info['median'],
+                'pred_mode': adjusted_uncertainty_info['mode'],
+                'pred_p05': adjusted_uncertainty_info['ci_lower'],
+                'pred_p25': adjusted_uncertainty_info['p25'],
+                'pred_p75': adjusted_uncertainty_info['p75'],
+                'pred_p95': adjusted_uncertainty_info['ci_upper'],
                 # Mixture parameters for proper averaging
-                'mixture_weights': uncertainty_info['mixture_weights'],
-                'mixture_locations': uncertainty_info['mixture_locations'],
-                'mixture_scales': uncertainty_info['mixture_scales'],
+                'mixture_weights': adjusted_uncertainty_info['mixture_weights'],
+                'mixture_locations': adjusted_uncertainty_info['mixture_locations'],
+                'mixture_scales': adjusted_uncertainty_info['mixture_scales'],
                 'camera_id': camera_file_path,
             })
             
@@ -130,13 +134,16 @@ def process_camera_chunk(args):
         # Load precision-aware model once per worker
         model = load_precision_aware_model()
         
+        # Initialize noise tuner
+        noise_tuner = NoiseTuner()
+
         # Store all results for this worker
         all_worker_results = []
         
         # Process each camera file in this chunk
         for camera_idx, camera_file_path in enumerate(camera_path_chunk):
             camera_results = process_single_camera(
-                camera_file_path, proportions, gt_avg_precision_across_cameras, model
+                camera_file_path, proportions, gt_avg_precision_across_cameras, model, noise_tuner
             )
             all_worker_results.extend(camera_results)
         
