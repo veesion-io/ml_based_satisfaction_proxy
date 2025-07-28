@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from .adversary import Adversary
 
 class ResidualMLP(nn.Module):
     def __init__(self, dim, dropout_rate=0.1): 
@@ -65,6 +66,9 @@ class DeepSetsPrecisionAware(nn.Module):
         self.mixture_weights_head = nn.Linear(phi_dim, n_bins)
         self.mixture_locations_head = nn.Linear(phi_dim, n_bins)
         self.mixture_scales_head = nn.Linear(phi_dim, n_bins)
+        
+        # Adversary
+        self.adversary = Adversary(phi_dim)
 
     def forward(self, x, counts):
         """
@@ -88,6 +92,6 @@ class DeepSetsPrecisionAware(nn.Module):
         # Get mixture parameters
         mixture_weights = torch.softmax(self.mixture_weights_head(rho_out), dim=1)
         mixture_locations = torch.sigmoid(self.mixture_locations_head(rho_out))
-        mixture_scales = torch.exp(self.mixture_scales_head(rho_out))
+        mixture_scales = F.softplus(self.mixture_scales_head(rho_out))
         
-        return mixture_weights, mixture_locations, mixture_scales 
+        return mixture_weights, mixture_locations, mixture_scales, rho_out 

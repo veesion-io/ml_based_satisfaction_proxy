@@ -38,7 +38,7 @@ def predict_densities_and_ratio_precision_aware(model, sample_data, sample_size)
     counts_tensor = torch.tensor([sample_size], dtype=torch.float32).to(DEVICE)
     
     with torch.no_grad():
-        mixture_weights, mixture_locations, mixture_scales = model(features_tensor, counts_tensor)
+        mixture_weights, mixture_locations, mixture_scales, _ = model(features_tensor, counts_tensor)
     
     return (mixture_weights.cpu().numpy()[0],
             mixture_locations.cpu().numpy()[0], 
