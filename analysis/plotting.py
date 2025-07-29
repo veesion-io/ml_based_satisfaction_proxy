@@ -34,7 +34,7 @@ def plot_precision_quantiles(ax, results_df, colors):
             color=colors['mean_line'], label='Mean Predicted TP Ratio (Avg across Cameras)', linewidth=2.5)
 
     # Plot the TRUE 95% CI of the distribution of AVERAGES
-    ax.fill_between(x, results_df['q05_avg_precision_pred'], results_df['q95_avg_precision_pred'], 
+    ax.fill_between(x, results_df['q025_avg_precision_pred'], results_df['q975_avg_precision_pred'], 
                     color=colors['true_ci_fill'], alpha=0.3, label='95% CI of the Average TP Ratio')
 
     
@@ -48,8 +48,8 @@ def plot_precision_quantiles(ax, results_df, colors):
     ax.xaxis.set_major_formatter(FuncFormatter(lambda x, p: f'{int(x)}%'))
     
     # Dynamic y-axis scaling
-    y_min = min(results_df['q05_avg_precision_pred'].min(), (results_df['mean_avg_precision_pred'] - (results_df['mean_ci_width'] / 2)).min())
-    y_max = max(results_df['q95_avg_precision_pred'].max(), (results_df['mean_avg_precision_pred'] + (results_df['mean_ci_width'] / 2)).max())
+    y_min = min(results_df['q025_avg_precision_pred'].min(), (results_df['mean_avg_precision_pred'] - (results_df['mean_ci_width'] / 2)).min())
+    y_max = max(results_df['q975_avg_precision_pred'].max(), (results_df['mean_avg_precision_pred'] + (results_df['mean_ci_width'] / 2)).max())
     padding = (y_max - y_min) * 0.1
     ax.set_ylim(y_min - padding, y_max + padding)
 

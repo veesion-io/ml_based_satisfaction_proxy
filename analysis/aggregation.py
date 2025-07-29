@@ -109,13 +109,13 @@ def compute_distribution_statistics(average_samples, gt_avg_precision_across_cam
     mean_error = abs(mean_of_averages - gt_avg_precision_across_cameras)
     
     # Compute quantiles of the TRUE distribution of averages
-    q05_avg = np.percentile(average_samples, 2.5)   # 2.5th percentile ≈ 5th
+    q025_avg = np.percentile(average_samples, 2.5)
     q10_avg = np.percentile(average_samples, 10)
     q25_avg = np.percentile(average_samples, 25)
     median_avg = np.percentile(average_samples, 50)
     q75_avg = np.percentile(average_samples, 75)
     q90_avg = np.percentile(average_samples, 90)
-    q95_avg = np.percentile(average_samples, 97.5)  # 97.5th percentile ≈ 95th
+    q975_avg = np.percentile(average_samples, 97.5)
     
     std_of_averages = np.std(average_samples)
     
@@ -128,8 +128,8 @@ def compute_distribution_statistics(average_samples, gt_avg_precision_across_cam
         'q75_avg_precision_error': abs(q75_avg - gt_avg_precision_across_cameras),
         'q10_avg_precision_error': abs(q10_avg - gt_avg_precision_across_cameras),
         'q90_avg_precision_error': abs(q90_avg - gt_avg_precision_across_cameras),
-        'q05_avg_precision_error': abs(q05_avg - gt_avg_precision_across_cameras),
-        'q95_avg_precision_error': abs(q95_avg - gt_avg_precision_across_cameras),
+        'q025_avg_precision_error': abs(q025_avg - gt_avg_precision_across_cameras),
+        'q975_avg_precision_error': abs(q975_avg - gt_avg_precision_across_cameras),
         'min_avg_precision_error': abs(np.min(average_samples) - gt_avg_precision_across_cameras),
         'max_avg_precision_error': abs(np.max(average_samples) - gt_avg_precision_across_cameras),
         
@@ -141,13 +141,13 @@ def compute_distribution_statistics(average_samples, gt_avg_precision_across_cam
         'q75_avg_precision_pred': q75_avg,
         'q10_avg_precision_pred': q10_avg,
         'q90_avg_precision_pred': q90_avg,
-        'q05_avg_precision_pred': q05_avg,
-        'q95_avg_precision_pred': q95_avg,
+        'q025_avg_precision_pred': q025_avg,
+        'q975_avg_precision_pred': q975_avg,
         'min_avg_precision_pred': np.min(average_samples),
         'max_avg_precision_pred': np.max(average_samples),
         
         # Width of the TRUE distribution of averages
-        'true_avg_ci_width': q95_avg - q05_avg,
+        'true_avg_ci_width': q975_avg - q025_avg,
         'true_avg_iqr_width': q75_avg - q25_avg,
         
         # Meta info
