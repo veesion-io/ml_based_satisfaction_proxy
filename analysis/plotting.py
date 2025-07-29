@@ -37,12 +37,6 @@ def plot_precision_quantiles(ax, results_df, colors):
     ax.fill_between(x, results_df['q05_avg_precision_pred'], results_df['q95_avg_precision_pred'], 
                     color=colors['true_ci_fill'], alpha=0.3, label='95% CI of the Average TP Ratio')
 
-    # --- NEW: Plot the AVERAGE 95% CI for a SINGLE camera prediction ---
-    # These are the error bars for a single camera, averaged across all cameras
-    avg_ci_lower = results_df['mean_avg_precision_pred'] - (results_df['mean_ci_width'] / 2)
-    avg_ci_upper = results_df['mean_avg_precision_pred'] + (results_df['mean_ci_width'] / 2)
-    ax.fill_between(x, avg_ci_lower, avg_ci_upper,
-                    color=colors['single_camera_ci_fill'], alpha=0.4, label='Average 95% CI for a Single Camera')
     
     # Style the plot
     ax.set_xlabel('Proportion of Data Used per Camera (%)', fontsize=14)

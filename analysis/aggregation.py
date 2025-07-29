@@ -6,51 +6,66 @@ Results aggregation utilities for convergence analysis
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+from multiprocessing import Pool
+
+
+def _aggregate_single_proportion(args):
+    proportion, all_results, gt_avg_precision_across_cameras = args
+    
+    # Get all results for this proportion
+    prop_results = [r for r in all_results if r['proportion'] == proportion]
+    
+    if not prop_results:
+        print(f"Warning: No results for proportion {proportion}")
+        return None
+    
+    # Compute distribution of average TP ratio across cameras
+    print(f"Computing distribution of average TP ratio for proportion {proportion:.1%} using VECTORIZED sampling...")
+    
+    # Extract mixture parameters for all cameras
+    camera_mixture_params = []
+    for r in prop_results:
+        camera_mixture_params.append({
+            'weights': r['mixture_weights'],
+            'locations': r['mixture_locations'], 
+            'scales': r['mixture_scales']
+        })
+    
+    # Compute aggregated statistics
+    aggregated_stats = compute_vectorized_monte_carlo_stats(
+        camera_mixture_params, gt_avg_precision_across_cameras
+    )
+    
+    # Individual camera statistics (for comparison/analysis)
+    camera_stats = compute_individual_camera_stats(prop_results)
+    
+    # Combine all statistics
+    if prop_results and len(aggregated_stats) > 0:
+        return {
+            'proportion': proportion,
+            **aggregated_stats,
+            **camera_stats,
+            'n_cameras': len(prop_results),
+            'mean_sample_size': np.mean([r['sample_size'] for r in prop_results])
+        }
+    return None
+
 
 def aggregate_results_by_proportion(all_results, proportions, gt_avg_precision_across_cameras):
     """Aggregate results by proportion for quantile analysis"""
     print("Aggregating results by proportion for quantile analysis...")
-    proportion_summary = []
     
-    for proportion in tqdm(proportions, desc="Aggregating by proportion"):
-        # Get all results for this proportion
-        prop_results = [r for r in all_results if r['proportion'] == proportion]
-        
-        if not prop_results:
-            print(f"Warning: No results for proportion {proportion}")
-            continue
-        
-        # Compute distribution of average TP ratio across cameras
-        print(f"Computing distribution of average TP ratio for proportion {proportion:.1%} using VECTORIZED sampling...")
-        
-        # Extract mixture parameters for all cameras
-        camera_mixture_params = []
-        for r in prop_results:
-            camera_mixture_params.append({
-                'weights': r['mixture_weights'],
-                'locations': r['mixture_locations'], 
-                'scales': r['mixture_scales']
-            })
-        
-        # Compute aggregated statistics
-        aggregated_stats = compute_vectorized_monte_carlo_stats(
-            camera_mixture_params, gt_avg_precision_across_cameras
-        )
-        
-        # Individual camera statistics (for comparison/analysis)
-        camera_stats = compute_individual_camera_stats(prop_results)
-        
-        # Combine all statistics
-        if prop_results and len(aggregated_stats) > 0:
-            proportion_summary.append({
-                'proportion': proportion,
-                **aggregated_stats,
-                **camera_stats,
-                'n_cameras': len(prop_results),
-                'mean_sample_size': np.mean([r['sample_size'] for r in prop_results])
-            })
+    # Prepare arguments for multiprocessing
+    tasks = [(proportion, all_results, gt_avg_precision_across_cameras) for proportion in proportions]
     
-    return proportion_summary
+    # Use a multiprocessing Pool to parallelize the aggregation
+    with Pool() as pool:
+        proportion_summaries = list(tqdm(pool.imap(_aggregate_single_proportion, tasks), total=len(proportions), desc="Aggregating by proportion"))
+    
+    # Filter out None values (for proportions with no results)
+    proportion_summaries = [s for s in proportion_summaries if s is not None]
+    
+    return proportion_summaries
 
 def compute_vectorized_monte_carlo_stats(camera_mixture_params, gt_avg_precision_across_cameras):
     """Compute statistics using vectorized Monte Carlo sampling"""

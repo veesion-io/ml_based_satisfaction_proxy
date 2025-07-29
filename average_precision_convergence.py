@@ -31,7 +31,7 @@ def get_ground_truth_precision():
 
 def get_default_proportions():
     """Get default proportions to test"""
-    return [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    return [0.02, 0.1, 0.2, 0.3]
 
 def print_processing_info(camera_paths, proportions):
     """Print processing information"""
