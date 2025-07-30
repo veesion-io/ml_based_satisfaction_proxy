@@ -70,8 +70,8 @@ def style_precision_plot(ax, results_df, gt_avg_precision):
     ax.xaxis.set_major_formatter(FuncFormatter(lambda x, p: f'{int(x)}%'))
     
     # Dynamic y-axis scaling
-    y_min = min(results_df['q05_avg_precision_pred'].min(), gt_avg_precision)
-    y_max = max(results_df['q95_avg_precision_pred'].max(), gt_avg_precision)
+    y_min = min(results_df['q025_avg_precision_pred'].min(), gt_avg_precision)
+    y_max = max(results_df['q975_avg_precision_pred'].max(), gt_avg_precision)
     padding = (y_max - y_min) * 0.1
     ax.set_ylim(y_min - padding, y_max + padding)
 
@@ -95,7 +95,7 @@ def plot_error_quantiles(ax, results_df, colors):
     ax.legend()
     ax.set_xlim(0, 100)
     ax.xaxis.set_major_formatter(FuncFormatter(lambda x, p: f'{int(x)}%'))
-    ax.set_ylim(0, results_df['q95_avg_precision_error'].max() * 1.1)
+    ax.set_ylim(0, results_df['q975_avg_precision_error'].max() * 1.1)
 
 def style_error_plot(ax, results_df):
     """Style the error plot with labels and limits"""
@@ -106,7 +106,7 @@ def style_error_plot(ax, results_df):
     ax.legend()
     ax.set_xlim(0, 100)
     ax.xaxis.set_major_formatter(FuncFormatter(lambda x, p: f'{int(x)}%'))
-    ax.set_ylim(0, results_df['q95_avg_precision_error'].max() * 1.1)
+    ax.set_ylim(0, results_df['q975_avg_precision_error'].max() * 1.1)
 
 def plot_uncertainty_analysis(ax, results_df, colors):
     """Plot the uncertainty analysis (Plot 3)"""

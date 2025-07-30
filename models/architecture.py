@@ -92,6 +92,6 @@ class DeepSetsPrecisionAware(nn.Module):
         # Get mixture parameters
         mixture_weights = torch.softmax(self.mixture_weights_head(rho_out), dim=1)
         mixture_locations = torch.sigmoid(self.mixture_locations_head(rho_out))
-        mixture_scales = F.softplus(self.mixture_scales_head(rho_out))
+        mixture_scales = F.softplus(self.mixture_scales_head(rho_out)) + 1e-6
         
         return mixture_weights, mixture_locations, mixture_scales, rho_out 
